@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import io.github.bonigarcia.wdm.WebDriverManager;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -16,11 +17,12 @@ public class ScanService {
     @Autowired
     private ScanResultRepository repository;
 
+    @Autowired
+    private IssueRepository issueRepository;
+
     public ScanResult performScan(String url) {
         ScanResult result = new ScanResult(url);
-
-        int critical = 0, serious = 0, moderate = 0, minor = 0;
-        StringBuilder issuesLog = new StringBuilder("{\"issues\":[");
+        List<Issue> detectedIssues = new ArrayList<>();
 
         WebDriverManager.chromedriver().setup();
         ChromeOptions options = new ChromeOptions();
@@ -33,17 +35,14 @@ public class ScanService {
         try {
             driver.get(url);
 
-            // Check 1: Images without alt text (CRITICAL)
             List<WebElement> images = driver.findElements(By.tagName("img"));
             for (WebElement img : images) {
                 String alt = img.getAttribute("alt");
                 if (alt == null || alt.trim().isEmpty()) {
-                    critical++;
-                    issuesLog.append("{\"type\":\"missing-alt-text\",\"severity\":\"critical\",\"element\":\"img\"},");
+                    detectedIssues.add(new Issue("missing-alt-text", "critical", "img"));
                 }
             }
 
-            // Check 2: Form inputs without labels (SERIOUS)
             List<WebElement> inputs = driver.findElements(By.tagName("input"));
             for (WebElement input : inputs) {
                 String ariaLabel = input.getAttribute("aria-label");
@@ -54,50 +53,68 @@ public class ScanService {
                     hasLabel = !labels.isEmpty();
                 }
                 if ((ariaLabel == null || ariaLabel.trim().isEmpty()) && !hasLabel) {
-                    serious++;
-                    issuesLog.append("{\"type\":\"missing-form-label\",\"severity\":\"serious\",\"element\":\"input\"},");
+                    detectedIssues.add(new Issue("missing-form-label", "serious", "input"));
                 }
             }
 
-            // Check 3: Empty links (MODERATE)
             List<WebElement> links = driver.findElements(By.tagName("a"));
             for (WebElement link : links) {
                 String text = link.getText();
                 String ariaLabel = link.getAttribute("aria-label");
                 if ((text == null || text.trim().isEmpty()) && (ariaLabel == null || ariaLabel.trim().isEmpty())) {
-                    moderate++;
-                    issuesLog.append("{\"type\":\"empty-link\",\"severity\":\"moderate\",\"element\":\"a\"},");
+                    detectedIssues.add(new Issue("empty-link", "moderate", "a"));
                 }
             }
 
-            // Check 4: Missing page title (MINOR)
             String title = driver.getTitle();
             if (title == null || title.trim().isEmpty()) {
-                minor++;
-                issuesLog.append("{\"type\":\"missing-page-title\",\"severity\":\"minor\",\"element\":\"title\"},");
+                detectedIssues.add(new Issue("missing-page-title", "minor", "title"));
             }
 
         } finally {
             driver.quit();
         }
 
-        if (issuesLog.charAt(issuesLog.length() - 1) == ',') {
-            issuesLog.deleteCharAt(issuesLog.length() - 1);
+        int critical = 0, serious = 0, moderate = 0, minor = 0;
+        for (Issue issue : detectedIssues) {
+            switch (issue.getSeverity()) {
+                case "critical": critical++; break;
+                case "serious": serious++; break;
+                case "moderate": moderate++; break;
+                case "minor": minor++; break;
+            }
         }
-        issuesLog.append("]}");
 
-        int total = critical + serious + moderate + minor;
-        result.setTotalIssues(total);
+        result.setTotalIssues(detectedIssues.size());
         result.setCriticalCount(critical);
         result.setSeriousCount(serious);
         result.setModerateCount(moderate);
         result.setMinorCount(minor);
-        result.setRawResultJson(issuesLog.toString());
+        result.setRawResultJson("{\"note\":\"see issues table for details\"}");
 
-        return repository.save(result);
+        ScanResult savedResult = repository.save(result);
+
+        for (Issue issue : detectedIssues) {
+            issue.setScanResult(savedResult);
+            issueRepository.save(issue);
+        }
+
+        return savedResult;
     }
 
     public List<ScanResult> getAllScans() {
         return repository.findAll();
+    }
+
+    public List<Issue> getIssuesForScan(Long scanId) {
+        return issueRepository.findByScanResultId(scanId);
+    }
+
+    public Issue updateIssue(Long issueId, String status, String assignedTo, String evidenceNote) {
+        Issue issue = issueRepository.findById(issueId).orElseThrow();
+        if (status != null) issue.setStatus(status);
+        if (assignedTo != null) issue.setAssignedTo(assignedTo);
+        if (evidenceNote != null) issue.setEvidenceNote(evidenceNote);
+        return issueRepository.save(issue);
     }
 }

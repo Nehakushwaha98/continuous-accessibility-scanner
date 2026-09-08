@@ -25,6 +25,9 @@ public class ScanResult {
     @Column(columnDefinition = "TEXT")
     private String rawResultJson;
 
+    @OneToMany(mappedBy = "scanResult", cascade = CascadeType.ALL)
+    private java.util.List<Issue> issues;
+
     // Constructors
     public ScanResult() {
         this.scanDate = LocalDateTime.now();
@@ -62,4 +65,7 @@ public class ScanResult {
 
     public String getRawResultJson() { return rawResultJson; }
     public void setRawResultJson(String rawResultJson) { this.rawResultJson = rawResultJson; }
+
+    public java.util.List<Issue> getIssues() { return issues; }
+    public void setIssues(java.util.List<Issue> issues) { this.issues = issues; }
 }

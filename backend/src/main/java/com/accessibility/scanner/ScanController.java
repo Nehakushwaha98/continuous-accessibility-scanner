@@ -24,4 +24,19 @@ public class ScanController {
     public List<ScanResult> getAllScans() {
         return scanService.getAllScans();
     }
+
+    @GetMapping("/{id}/issues")
+    public List<Issue> getIssuesForScan(@PathVariable Long id) {
+        return scanService.getIssuesForScan(id);
+    }
+
+    @PutMapping("/issues/{issueId}")
+    public Issue updateIssue(@PathVariable Long issueId, @RequestBody Map<String, String> request) {
+        return scanService.updateIssue(
+                issueId,
+                request.get("status"),
+                request.get("assignedTo"),
+                request.get("evidenceNote")
+        );
+    }
 }
