@@ -14,6 +14,12 @@ public class ScanController {
     @Autowired
     private ScanService scanService;
 
+    @Autowired
+    private ScanResultRepository scanResultRepository;
+
+    @Autowired
+    private IssueRepository issueRepository;
+
     @PostMapping
     public ScanResult createScan(@RequestBody Map<String, String> request) {
         String url = request.get("url");
@@ -38,5 +44,22 @@ public class ScanController {
                 request.get("assignedTo"),
                 request.get("evidenceNote")
         );
+    }
+
+    @PostMapping("/issues/{issueId}/rescan")
+    public Issue rescanIssue(@PathVariable Long issueId) {
+        return scanService.rescanIssue(issueId);
+    }
+
+    @GetMapping("/audit-log")
+    public List<AuditLog> getAuditLog() {
+        return scanService.getAuditLog();
+    }
+
+    @DeleteMapping("/{id}")
+    public void deleteScan(@PathVariable Long id) {
+        List<Issue> issues = issueRepository.findByScanResultId(id);
+        issueRepository.deleteAll(issues);
+        scanResultRepository.deleteById(id);
     }
 }

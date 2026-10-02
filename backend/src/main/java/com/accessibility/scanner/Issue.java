@@ -24,6 +24,11 @@ public class Issue {
     private String assignedTo;
     private String evidenceNote;
 
+    // Evidence relationship
+    @OneToMany(mappedBy = "issue", cascade = CascadeType.ALL, orphanRemoval = true)
+    @JsonIgnore
+    private java.util.List<Evidence> evidence = new java.util.ArrayList<>();
+
     public Issue() {}
 
     public Issue(String type, String severity, String element) {
@@ -32,27 +37,75 @@ public class Issue {
         this.element = element;
     }
 
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
+    public Long getId() {
+        return id;
+    }
 
-    public ScanResult getScanResult() { return scanResult; }
-    public void setScanResult(ScanResult scanResult) { this.scanResult = scanResult; }
+    public void setId(Long id) {
+        this.id = id;
+    }
 
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
+    public ScanResult getScanResult() {
+        return scanResult;
+    }
 
-    public String getSeverity() { return severity; }
-    public void setSeverity(String severity) { this.severity = severity; }
+    public void setScanResult(ScanResult scanResult) {
+        this.scanResult = scanResult;
+    }
 
-    public String getElement() { return element; }
-    public void setElement(String element) { this.element = element; }
+    public String getType() {
+        return type;
+    }
 
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+    public void setType(String type) {
+        this.type = type;
+    }
 
-    public String getAssignedTo() { return assignedTo; }
-    public void setAssignedTo(String assignedTo) { this.assignedTo = assignedTo; }
+    public String getSeverity() {
+        return severity;
+    }
 
-    public String getEvidenceNote() { return evidenceNote; }
-    public void setEvidenceNote(String evidenceNote) { this.evidenceNote = evidenceNote; }
+    public void setSeverity(String severity) {
+        this.severity = severity;
+    }
+
+    public String getElement() {
+        return element;
+    }
+
+    public void setElement(String element) {
+        this.element = element;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getAssignedTo() {
+        return assignedTo;
+    }
+
+    public void setAssignedTo(String assignedTo) {
+        this.assignedTo = assignedTo;
+    }
+
+    public String getEvidenceNote() {
+        return evidenceNote;
+    }
+
+    public void setEvidenceNote(String evidenceNote) {
+        this.evidenceNote = evidenceNote;
+    }
+
+    public java.util.List<Evidence> getEvidence() {
+        return evidence;
+    }
+
+    public void setEvidence(java.util.List<Evidence> evidence) {
+        this.evidence = evidence;
+    }
 }

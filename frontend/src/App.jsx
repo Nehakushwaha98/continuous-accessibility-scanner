@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import {
   LayoutDashboard, ScanLine, ListChecks,
   ClipboardList, Users, FileText, Settings, Shield, Search, ChevronRight, ChevronLeft,
   Globe, ClipboardCheck, ScrollText, Activity, Plus, RotateCw, Upload, X, CheckCircle2,
-  AlertTriangle, Clock, UserPlus
+  AlertTriangle, Clock, UserPlus, Zap, BarChart3, GitPullRequest, ArrowRight, Eye,
+  Workflow, Gauge, Link2, UserCheck, Wrench, ImagePlus, RefreshCcw, ShieldCheck, EyeOff
 } from 'lucide-react';
 import './App.css';
 
@@ -33,6 +34,38 @@ const WCAG_CHECKLIST = [
 ];
 
 const COLORS = { critical: '#dc2626', serious: '#f97316', moderate: '#eab308', minor: '#3b82f6' };
+
+const AUDIT_ACTION_LABELS = {
+  SCAN_COMPLETED: 'Scan Completed',
+  MANUAL_UPDATE: 'Issue Updated',
+  RESCANNED: 'Re-scanned',
+  EVIDENCE_UPLOADED: 'Evidence Uploaded',
+  EVIDENCE_DELETED: 'Evidence Deleted',
+};
+
+function formatAuditAction(action) {
+  return AUDIT_ACTION_LABELS[action] || action;
+}
+
+function formatAuditDetails(details) {
+  if (!details) return '—';
+  // Strip out "field=null" segments and tidy up the remaining key=value pairs
+  const parts = details.split(',').map(p => p.trim()).filter(Boolean);
+  const readable = parts
+    .map(p => {
+      const [key, ...rest] = p.split('=');
+      const value = rest.join('=').trim();
+      if (!value || value === 'null') return null;
+      const label = {
+        status: 'Status', assignedTo: 'Assigned to', result: 'Result',
+        url: 'URL', issuesFound: 'Issues found',
+      }[key.trim()] || key.trim();
+      return `${label}: ${value}`;
+    })
+    .filter(Boolean);
+  return readable.length ? readable.join(' · ') : 'No change';
+}
+
 
 // Remediation workflow stages (visual only — maps onto the existing status field)
 const WORKFLOW_STAGES = ['Open', 'Assigned', 'In Progress', 'Fixed', 'Retest', 'Closed'];
@@ -80,6 +113,42 @@ const PAGE_META = {
   health: { title: 'System Health', desc: 'Live status of backend, scanner and database components', crumb: ['Administration', 'System Health'] },
   settings: { title: 'Settings', desc: 'Application preferences', crumb: ['Administration', 'Settings'] },
 };
+
+
+const WORKFLOW_DIAGRAM_STEPS = [
+  { icon: Link2, label: 'URL Submitted' },
+  { icon: ScanLine, label: 'Scan Run' },
+  { icon: ListChecks, label: 'WCAG Analysis' },
+  { icon: Gauge, label: 'Severity Ranked' },
+  { icon: UserCheck, label: 'Assigned' },
+  { icon: Wrench, label: 'Remediated' },
+  { icon: ImagePlus, label: 'Evidence Added' },
+  { icon: RefreshCcw, label: 'Re-scanned' },
+  { icon: ShieldCheck, label: 'Compliance Updated' },
+];
+
+function WorkflowDiagram() {
+  return (
+    <div className="workflow-diagram" aria-label="Accessibility remediation workflow">
+      {WORKFLOW_DIAGRAM_STEPS.map((step, i) => {
+        const Icon = step.icon;
+        return (
+          <React.Fragment key={step.label}>
+            <div className="workflow-diagram-step">
+              <div className="workflow-diagram-icon"><Icon size={17} /></div>
+              <span className="workflow-diagram-label">{step.label}</span>
+            </div>
+            {i < WORKFLOW_DIAGRAM_STEPS.length - 1 && (
+              <div className="workflow-diagram-arrow">
+                <ChevronRight size={16} />
+              </div>
+            )}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
 
 // ---------- Small shared UI pieces ----------
 
@@ -136,13 +205,196 @@ function WorkflowStepper({ status }) {
   );
 }
 
+// ---------- Landing page (shown before login) ----------
+
+const LANDING_FEATURES = [
+  {
+    icon: ScanLine,
+    title: 'Automated URL Scanning',
+    desc: 'Point AccessScan at any public page and get a full WCAG 2.1 pass in seconds — missing alt text, unlabeled inputs, empty links, and more.',
+  },
+  {
+    icon: Gauge,
+    title: 'Severity-Ranked Issues',
+    desc: 'Every finding is classified Critical, Serious, Moderate, or Minor, so your team fixes what actually matters first.',
+  },
+  {
+    icon: Workflow,
+    title: 'Remediation Workflow',
+    desc: 'Assign issues to developers, track them through Open → In Progress → Fixed → Retest → Closed, and keep an audit trail.',
+  },
+  {
+    icon: Eye,
+    title: 'Before / After Evidence',
+    desc: 'Attach screenshots and notes proving an issue was actually fixed, not just marked resolved.',
+  },
+  {
+    icon: BarChart3,
+    title: 'Compliance Dashboard',
+    desc: 'Track your compliance score, issue trends, and severity breakdown across every website you monitor, over time.',
+  },
+  {
+    icon: GitPullRequest,
+    title: 'Full Audit Log',
+    desc: 'Every scan, assignment, and status change is logged for accountability — exportable for compliance reporting.',
+  },
+];
+
+const HOW_IT_WORKS_STEPS = [
+  { title: 'Add a website', desc: 'Enter the URL you want to monitor for accessibility.' },
+  { title: 'Run an accessibility scan', desc: 'AccessScan checks the page against WCAG 2.1 success criteria.' },
+  { title: 'Review issues & WCAG mappings', desc: 'Every finding is severity-ranked and linked to its WCAG criterion.' },
+  { title: 'Assign & remediate', desc: 'Assign issues to a developer and track status through the workflow.' },
+  { title: 'Submit evidence & re-scan', desc: 'Upload before/after evidence and re-check the fix.' },
+  { title: 'Review results & reports', desc: 'See updated compliance score and export a CSV report.' },
+];
+
+function LandingPreview() {
+  return (
+    <div className="landing-preview" aria-hidden="true">
+      <div className="landing-preview-chrome">
+        <span className="landing-preview-dot" />
+        <span className="landing-preview-dot" />
+        <span className="landing-preview-dot" />
+        <span className="landing-preview-url">localhost:5173/dashboard</span>
+      </div>
+      <div className="landing-preview-body">
+        <div className="landing-preview-sidebar">
+          <div className="landing-preview-sidebar-brand" />
+          <div className="landing-preview-sidebar-item active" />
+          <div className="landing-preview-sidebar-item" />
+          <div className="landing-preview-sidebar-item" />
+          <div className="landing-preview-sidebar-item" />
+        </div>
+        <div className="landing-preview-main">
+          <div className="landing-preview-stats">
+            <div className="landing-preview-stat" />
+            <div className="landing-preview-stat" />
+            <div className="landing-preview-stat" />
+            <div className="landing-preview-stat highlight" />
+          </div>
+          <div className="landing-preview-charts">
+            <div className="landing-preview-chart">
+              <div className="landing-preview-donut" />
+            </div>
+            <div className="landing-preview-chart">
+              <div className="landing-preview-bars">
+                <span style={{ height: '35%' }} />
+                <span style={{ height: '55%' }} />
+                <span style={{ height: '40%' }} />
+                <span style={{ height: '70%' }} />
+                <span style={{ height: '50%' }} />
+                <span style={{ height: '85%' }} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LandingPage({ onGetStarted }) {
+  return (
+    <div className="landing-page">
+      <header className="landing-nav">
+        <div className="landing-brand">
+          <Shield size={22} />
+          <span>AccessScan</span>
+        </div>
+        <nav className="landing-nav-links">
+          <a href="#features">Features</a>
+          <a href="#how-it-works">How It Works</a>
+        </nav>
+        <button className="btn-primary landing-nav-cta" onClick={onGetStarted}>
+          Sign in <ArrowRight size={15} />
+        </button>
+      </header>
+
+      <section className="landing-hero">
+        <span className="landing-badge">Continuous Web Accessibility Compliance</span>
+        <h1>
+          Find accessibility issues.<br />
+          Fix them. <span className="landing-highlight">Prove it.</span>
+        </h1>
+        <p className="landing-subtitle">
+          AccessScan scans your websites against WCAG 2.1 success criteria, tracks every issue
+          through a full remediation workflow, and gives you a live compliance dashboard —
+          so accessibility stops being a one-time audit and starts being continuous.
+        </p>
+        <div className="landing-cta-row">
+          <button className="btn-primary landing-cta-primary" onClick={onGetStarted}>
+            Get Started <ArrowRight size={16} />
+          </button>
+          <span className="landing-cta-hint">Default admin account included — no signup needed.</span>
+        </div>
+
+        <LandingPreview />
+
+        <div className="landing-stats">
+          <div className="landing-stat">
+            <span className="landing-stat-num">4</span>
+            <span className="landing-stat-label">WCAG Success Criteria Checked</span>
+          </div>
+          <div className="landing-stat">
+            <span className="landing-stat-num">6</span>
+            <span className="landing-stat-label">Remediation Workflow Stages</span>
+          </div>
+          <div className="landing-stat">
+            <span className="landing-stat-num">100%</span>
+            <span className="landing-stat-label">Audit Trail Coverage</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="landing-features" id="features">
+        <h2>Everything you need to close the loop</h2>
+        <p className="landing-features-sub">From first scan to verified fix.</p>
+        <div className="landing-feature-grid">
+          {LANDING_FEATURES.map((f) => {
+            const Icon = f.icon;
+            return (
+              <div className="landing-feature-card" key={f.title}>
+                <div className="landing-feature-icon"><Icon size={20} /></div>
+                <h3>{f.title}</h3>
+                <p>{f.desc}</p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="landing-how" id="how-it-works">
+        <h2>How it works</h2>
+        <p className="landing-features-sub">Six steps from first scan to verified fix.</p>
+        <div className="landing-how-steps">
+          {HOW_IT_WORKS_STEPS.map((step, i) => (
+            <div className="landing-how-step" key={step.title}>
+              <span className="landing-how-num">{i + 1}</span>
+              <div>
+                <h4>{step.title}</h4>
+                <p>{step.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <footer className="landing-footer">
+        <span>Continuous Web Accessibility Compliance Scanner with Remediation Workflow</span>
+      </footer>
+    </div>
+  );
+}
+
 // ---------- Login ----------
 
-function Login({ onLogin }) {
+function Login({ onLogin, onBackToLanding }) {
   const [mode, setMode] = useState('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -165,40 +417,81 @@ function Login({ onLogin }) {
   };
 
   return (
-    <div className="app-shell login-shell">
-      <form onSubmit={submit} className="login-card">
-        <div className="login-brand"><Shield size={22} /><span>AccessScan</span></div>
-        <h2>{mode === 'login' ? 'Sign in to your account' : 'Create an account'}</h2>
-
-        {mode === 'signup' && (
-          <div className="field">
-            <label htmlFor="name">Full name</label>
-            <input id="name" type="text" placeholder="Jane Doe" value={name} onChange={(e) => setName(e.target.value)} />
+    <div className="auth-page">
+      <div className="auth-visual">
+        <div className="auth-visual-glow auth-glow-one" />
+        <div className="auth-visual-glow auth-glow-two" />
+        <div className="auth-visual-content">
+          <div className="auth-visual-brand"><Shield size={22} /><span>AccessScan</span></div>
+          <span className="auth-kicker">CONTINUOUS ACCESSIBILITY COMPLIANCE</span>
+          <h1>Find issues.<br />Fix them.<br /><span>Prove it.</span></h1>
+          <p>Scan websites against WCAG 2.1, assign remediation work, capture before/after evidence, and verify fixes with a re-scan.</p>
+          <div className="auth-feature-list">
+            <div><CheckCircle2 size={17} /><span>Automated WCAG issue detection</span></div>
+            <div><CheckCircle2 size={17} /><span>Developer assignment & remediation</span></div>
+            <div><CheckCircle2 size={17} /><span>Persistent evidence & audit trail</span></div>
           </div>
-        )}
-        <div className="field">
-          <label htmlFor="email">Email</label>
-          <input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
         </div>
-        <div className="field">
-          <label htmlFor="password">Password</label>
-          <input id="password" type="password" placeholder="Min 6 characters" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <div className="auth-mini-dashboard">
+          <div className="auth-mini-top"><span /><span /><span /></div>
+          <div className="auth-mini-grid"><div /><div /><div className="wide" /><div /></div>
         </div>
-
-        <button type="submit" className="btn-primary btn-block" disabled={loading}>
-          {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
-        </button>
-
-        <InlineError message={error} />
-
-        <p className="login-switch">
-          {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
-          <button type="button" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}>
-            {mode === 'login' ? 'Sign up' : 'Sign in'}
+      </div>
+      <div className="auth-form-area">
+        <form onSubmit={submit} className="login-card">
+          <button type="button" className="login-back" onClick={onBackToLanding}>
+            <ChevronLeft size={14} /> Back
           </button>
-        </p>
-        {mode === 'login' && <p className="login-hint">Default: admin@scan.local / admin123</p>}
-      </form>
+          <div className="login-brand"><Shield size={22} /><span>AccessScan</span></div>
+          <h2>{mode === 'login' ? 'Sign in to your account' : 'Create an account'}</h2>
+
+          {mode === 'signup' && (
+            <div className="field">
+              <label htmlFor="name">Full name</label>
+              <input id="name" type="text" placeholder="Jane Doe" value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+          )}
+          <div className="field">
+            <label htmlFor="email">Email</label>
+            <input id="email" type="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          </div>
+          <div className="field">
+            <label htmlFor="password">Password</label>
+            <div className="password-input-wrap">
+              <input
+                id="password"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Min 6 characters"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <button
+                type="button"
+                className="password-toggle-btn"
+                onClick={() => setShowPassword((s) => !s)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          <button type="submit" className="btn-primary btn-block" disabled={loading}>
+            {loading ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}
+          </button>
+
+          <InlineError message={error} />
+
+          <p className="login-switch">
+            {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
+            <button type="button" onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}>
+              {mode === 'login' ? 'Sign up' : 'Sign in'}
+            </button>
+          </p>
+          {mode === 'login' && <p className="login-hint">Default: admin@scan.local / admin123</p>}
+        </form>
+      </div>
     </div>
   );
 }
@@ -210,6 +503,7 @@ function App() {
     const raw = localStorage.getItem('user');
     return raw ? JSON.parse(raw) : null;
   });
+  const [showLanding, setShowLanding] = useState(true);
 
   const [tab, setTab] = useState('dashboard');
   const [url, setUrl] = useState('');
@@ -225,10 +519,24 @@ function App() {
   const [auditLogs, setAuditLogs] = useState([]);
   const [selectedIssueId, setSelectedIssueId] = useState(null);
 
-  // Frontend-only mock state for newly added features (not persisted to backend yet)
+  // UI preferences remain local; accessibility evidence is persisted through Spring Boot.
   const [newSiteUrl, setNewSiteUrl] = useState('');
   const [extraSites, setExtraSites] = useState([]); // sites added from the Websites page before they've been scanned
-  const [evidenceByIssue, setEvidenceByIssue] = useState({}); // { issueId: { before, after } } data URLs
+  const [evidenceByIssue, setEvidenceByIssue] = useState({}); // { issueId: { before: {id, url}, after: {id, url} } }
+  const [notificationPrefs, setNotificationPrefs] = useState({ scanComplete: true, issueAssigned: true, issueResolved: false });
+  const [issuesByScan, setIssuesByScan] = useState({}); // { scanId: Issue[] } — cached so compliance reflects live remediation status
+
+  // ---------- Toast notifications ----------
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+
+  const showToast = (msg, type = 'success') => {
+    clearTimeout(toastTimer.current);
+    setToast({ msg, type });
+    toastTimer.current = setTimeout(() => setToast(null), 3500);
+  };
+
+  useEffect(() => () => clearTimeout(toastTimer.current), []);
 
   useEffect(() => { if (user) { fetchHistory(); fetchAuditLogs(); } }, [user]);
 
@@ -239,11 +547,23 @@ function App() {
       const sorted = res.data.slice().reverse();
       setHistory(sorted);
 
+      // Fetch each scan's issues so compliance score/stats reflect live remediation
+      // status (resolved/closed issues), not just the raw counts from scan time.
+      const entries = await Promise.all(
+        sorted.map((h) =>
+          axios.get(`${API_BASE}/${h.id}/issues`)
+            .then((r) => [h.id, r.data])
+            .catch(() => [h.id, null])
+        )
+      );
+      const map = {};
+      entries.forEach(([id, data]) => { if (data) map[id] = data; });
+      setIssuesByScan(map);
+
       if (sorted.length > 0 && issues.length === 0) {
         const latest = sorted[0];
-        const issuesRes = await axios.get(`${API_BASE}/${latest.id}/issues`);
         setCurrentScan(latest);
-        setIssues(issuesRes.data);
+        setIssues(map[latest.id] || []);
       }
     } catch (err) { console.error(err); }
     finally { setHistoryLoading(false); }
@@ -276,9 +596,12 @@ function App() {
       const issuesRes = await axios.get(`${API_BASE}/${res.data.id}/issues`);
       setIssues(issuesRes.data);
       fetchHistory();
+      fetchAuditLogs();
       setExtraSites((prev) => prev.filter((s) => s !== targetUrl));
+      showToast(`Scan complete. ${issuesRes.data.length} issue${issuesRes.data.length === 1 ? '' : 's'} found.`);
     } catch (err) {
-      setError('Unable to complete scan. The website may be unreachable, blocking automated tools, or the backend service may be unavailable.');
+      setError(err.response?.data?.error || 'Unable to complete scan. The website may be unreachable, blocking automated tools, or the backend service may be unavailable.');
+      showToast('Scan failed. Check the URL and try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -291,18 +614,43 @@ function App() {
     await runScan(url.trim());
   };
 
+  // Returns true on success, false on failure (so callers can show their own success message)
   const updateIssue = async (issueId, updates) => {
     try {
       await axios.put(`${API_BASE}/issues/${issueId}`, updates);
-      setIssues(issues.map(i => i.id === issueId ? { ...i, ...updates } : i));
-    } catch (err) { console.error(err); }
+      const updatedIssues = issues.map(i => i.id === issueId ? { ...i, ...updates } : i);
+      setIssues(updatedIssues);
+      if (currentScan) {
+        setIssuesByScan((prev) => ({ ...prev, [currentScan.id]: updatedIssues }));
+      }
+      fetchAuditLogs();
+      return true;
+    } catch (err) {
+      console.error(err);
+      showToast(err.response?.data?.error || err.response?.data?.message || 'Could not update issue. Please try again.', 'error');
+      return false;
+    }
   };
 
   const rescanIssue = async (issueId) => {
     try {
       const res = await axios.post(`${API_BASE}/issues/${issueId}/rescan`);
-      setIssues(issues.map(i => (i.id === issueId ? res.data : i)));
-    } catch (err) { console.error(err); }
+      const updatedIssues = issues.map(i => (i.id === issueId ? res.data : i));
+      setIssues(updatedIssues);
+      if (currentScan) {
+        setIssuesByScan((prev) => ({ ...prev, [currentScan.id]: updatedIssues }));
+      }
+      fetchAuditLogs();
+      showToast(`Re-scan complete. Status: ${res.data.status}`);
+    } catch (err) {
+      console.error(err);
+      showToast('Re-scan failed. Please try again.', 'error');
+    }
+  };
+
+  const markAsFixed = async (issueId) => {
+    const ok = await updateIssue(issueId, { status: 'Fixed' });
+    if (ok) showToast('Issue marked as Fixed. Now re-scan to verify the fix.');
   };
 
   const loadScanFromHistory = async (scan) => {
@@ -322,11 +670,35 @@ function App() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     setUser(null);
+    setShowLanding(true);
   };
 
-  const scoreOf = (h) => h.totalIssues
-    ? Math.max(0, Math.round(100 - (h.criticalCount * 3 + h.seriousCount * 2 + h.moderateCount * 1 + h.minorCount * 0.5) / h.totalIssues * 10))
-    : 100;
+  const CLOSED_STATUSES = ['Fixed', 'Resolved', 'Closed'];
+
+  // Counts only OPEN issues for a scan (resolved/fixed/closed ones no longer count against
+  // compliance), using the live issue list when we have it, falling back to the scan's
+  // raw detected counts if issues haven't loaded yet.
+  const openCountsFor = (h) => {
+    const liveIssues = issuesByScan[h.id];
+    if (!liveIssues) {
+      return { critical: h.criticalCount, serious: h.seriousCount, moderate: h.moderateCount, minor: h.minorCount, total: h.totalIssues };
+    }
+    const open = liveIssues.filter(i => !CLOSED_STATUSES.includes(i.status));
+    return {
+      critical: open.filter(i => i.severity === 'critical').length,
+      serious: open.filter(i => i.severity === 'serious').length,
+      moderate: open.filter(i => i.severity === 'moderate').length,
+      minor: open.filter(i => i.severity === 'minor').length,
+      total: open.length,
+    };
+  };
+
+  const scoreOf = (h) => {
+    const c = openCountsFor(h);
+    return c.total
+      ? Math.max(0, Math.round(100 - (c.critical * 3 + c.serious * 2 + c.moderate * 1 + c.minor * 0.5) / c.total * 10))
+      : 100;
+  };
 
   const downloadCsvReport = () => {
     const header = ['Website', 'Scan Date', 'Total Issues', 'Critical', 'Serious', 'Moderate', 'Minor', 'Compliance Score'];
@@ -344,30 +716,143 @@ function App() {
     a.click();
     a.remove();
     window.URL.revokeObjectURL(dlUrl);
+    showToast('CSV report downloaded');
   };
 
-  const handleEvidenceUpload = (issueId, side, file) => {
+  const deleteScan = async (scanId, scanUrl) => {
+    if (!window.confirm(`Delete the scan history for ${scanUrl}? This cannot be undone.`)) return;
+    try {
+      await axios.delete(`${API_BASE}/${scanId}`);
+      if (currentScan?.id === scanId) {
+        setCurrentScan(null);
+        setIssues([]);
+      }
+      fetchHistory();
+      showToast('Scan deleted');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not delete scan.', 'error');
+    }
+  };
+
+  const evidenceFileUrl = async (evidenceId) => {
+    const res = await axios.get(`${API_BASE}/issues/evidence/${evidenceId}/file`, {
+      responseType: 'blob',
+    });
+    return URL.createObjectURL(res.data);
+  };
+
+  const loadIssueEvidence = async (issueId) => {
+    try {
+      const res = await axios.get(`${API_BASE}/issues/${issueId}/evidence`);
+      const loaded = {};
+      await Promise.all((res.data || []).map(async (evidence) => {
+        loaded[evidence.type] = {
+          id: evidence.id,
+          url: await evidenceFileUrl(evidence.id),
+          fileName: evidence.fileName,
+        };
+      }));
+
+      setEvidenceByIssue((prev) => {
+        const previous = prev[issueId] || {};
+        Object.values(previous).forEach((item) => {
+          if (item?.url) URL.revokeObjectURL(item.url);
+        });
+        return { ...prev, [issueId]: loaded };
+      });
+    } catch (err) {
+      console.error('Unable to load evidence', err);
+      setEvidenceByIssue((prev) => ({ ...prev, [issueId]: {} }));
+    }
+  };
+
+  useEffect(() => {
+    if (!selectedIssueId) return;
+    loadIssueEvidence(selectedIssueId);
+  }, [selectedIssueId]);
+
+  const handleEvidenceUpload = async (issueId, side, file) => {
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
+
+    if (!file.type.startsWith('image/')) {
+      showToast('Evidence must be an image file.', 'error');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('Evidence image must be 10 MB or smaller.', 'error');
+      return;
+    }
+
+    try {
+      const formData = new FormData();
+      formData.append('type', side);
+      formData.append('file', file);
+
+      await axios.post(`${API_BASE}/issues/${issueId}/evidence`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+
+      await loadIssueEvidence(issueId);
+      fetchAuditLogs();
+      showToast(`${side === 'before' ? 'Before' : 'After'} screenshot uploaded successfully`);
+    } catch (err) {
+      showToast(err.response?.data?.error || err.response?.data?.message || 'Unable to upload evidence.', 'error');
+      console.error(err);
+    }
+  };
+
+  const removeEvidence = async (issueId, side) => {
+    const item = evidenceByIssue[issueId]?.[side];
+    if (!item?.id) return;
+
+    try {
+      await axios.delete(`${API_BASE}/issues/evidence/${item.id}`);
+      if (item.url) URL.revokeObjectURL(item.url);
       setEvidenceByIssue((prev) => ({
         ...prev,
-        [issueId]: { ...prev[issueId], [side]: reader.result },
+        [issueId]: { ...prev[issueId], [side]: null },
       }));
-    };
-    reader.readAsDataURL(file);
+      fetchAuditLogs();
+      showToast('Screenshot removed');
+    } catch (err) {
+      showToast(err.response?.data?.error || err.response?.data?.message || 'Unable to remove evidence.', 'error');
+      console.error(err);
+    }
   };
 
   if (!user) {
-    return <Login onLogin={setUser} />;
+    if (showLanding) {
+      return <LandingPage onGetStarted={() => setShowLanding(false)} />;
+    }
+    return <Login onLogin={setUser} onBackToLanding={() => setShowLanding(true)} />;
   }
 
   const totalScans = history.length;
-  const totalIssuesFound = history.reduce((s, h) => s + h.totalIssues, 0);
-  const totalCritical = history.reduce((s, h) => s + h.criticalCount, 0);
-  const totalSerious = history.reduce((s, h) => s + h.seriousCount, 0);
-  const totalModerate = history.reduce((s, h) => s + h.moderateCount, 0);
-  const totalMinor = history.reduce((s, h) => s + h.minorCount, 0);
+  const openTotals = history.reduce((acc, h) => {
+    const c = openCountsFor(h);
+    acc.total += c.total; acc.critical += c.critical; acc.serious += c.serious;
+    acc.moderate += c.moderate; acc.minor += c.minor;
+    return acc;
+  }, { total: 0, critical: 0, serious: 0, moderate: 0, minor: 0 });
+  const totalIssuesFound = openTotals.total;
+  const totalCritical = openTotals.critical;
+  const totalSerious = openTotals.serious;
+  const totalModerate = openTotals.moderate;
+  const totalMinor = openTotals.minor;
+
+  // Remediation progress: everything ever detected vs. everything since marked Fixed/Resolved/Closed
+  const remediation = history.reduce((acc, h) => {
+    const live = issuesByScan[h.id];
+    if (live) {
+      acc.detected += live.length;
+      acc.resolved += live.filter(i => CLOSED_STATUSES.includes(i.status)).length;
+    } else {
+      acc.detected += h.totalIssues;
+    }
+    return acc;
+  }, { detected: 0, resolved: 0 });
+  const remediationPct = remediation.detected ? Math.round((remediation.resolved / remediation.detected) * 100) : 0;
   const complianceScore = totalScans === 0
     ? null
     : totalIssuesFound
@@ -459,16 +944,37 @@ function App() {
             {/* ===== DASHBOARD ===== */}
             {tab === 'dashboard' && (
               <>
+                <div className="dash-hero">
+                  <div className="dash-hero-left">
+                    <span className="dash-hero-kicker">CONTINUOUS COMPLIANCE MONITORING</span>
+                    <h2>Accessibility health, <em>at a glance.</em></h2>
+                    <p>
+                      {totalScans === 0
+                        ? 'Run your first scan to start tracking WCAG 2.1 compliance across your websites.'
+                        : `Tracking ${totalScans} scan${totalScans === 1 ? '' : 's'} across your monitored websites, with ${totalCritical} critical issue${totalCritical === 1 ? '' : 's'} currently open.`}
+                    </p>
+                    <button className="btn-primary dash-hero-cta" onClick={() => setTab('scanner')}>
+                      <ScanLine size={15} /> Run New Scan
+                    </button>
+                  </div>
+                  <div className="dash-hero-score">
+                    <span>COMPLIANCE INDEX</span>
+                    <strong>{complianceScore === null ? '—' : complianceScore}<small>{complianceScore === null ? '' : '%'}</small></strong>
+                    <div>{complianceScore === null ? 'No scans yet' : complianceScore >= 80 ? 'Good standing' : complianceScore >= 50 ? 'Needs attention' : 'Critical attention needed'}</div>
+                  </div>
+                </div>
+
+                <WorkflowDiagram />
                 <div className="stat-row">
                   <div className="stat-box"><span className="stat-num">{totalScans}</span><span className="stat-label">Total Scans</span></div>
-                  <div className="stat-box"><span className="stat-num">{totalIssuesFound}</span><span className="stat-label">Total Issues</span></div>
-                  <div className="stat-box"><span className="stat-num">{totalCritical}</span><span className="stat-label">Critical Issues</span></div>
+                  <div className="stat-box"><span className="stat-num">{totalIssuesFound}</span><span className="stat-label">Open Issues</span></div>
+                  <div className="stat-box"><span className="stat-num">{totalCritical}</span><span className="stat-label">Open Critical Issues</span></div>
                   <div className="stat-box highlight">
                     <span className="stat-num">{complianceScore === null ? '—' : `${complianceScore}%`}</span>
                     <span className="stat-label">Compliance Score*</span>
                   </div>
                 </div>
-                <p className="score-note">*Internal compliance score — weighted deduction by severity, not an official WCAG certification.</p>
+                <p className="score-note">*Compliance score and issue counts update live as you mark issues Fixed/Resolved/Closed — not an official WCAG certification.</p>
 
                 <div className="chart-grid">
                   <div className="chart-box">
@@ -505,21 +1011,40 @@ function App() {
                   </div>
                 </div>
 
+                <div className="table-box remediation-progress-box">
+                  <div className="table-box-header">
+                    <h4>Remediation Progress</h4>
+                    <span className="remediation-progress-pct">{remediationPct}%</span>
+                  </div>
+                  <div className="remediation-progress-bar">
+                    <div className="remediation-progress-fill" style={{ width: `${remediationPct}%` }} />
+                  </div>
+                  <p className="score-note" style={{ marginBottom: 0 }}>
+                    {remediation.resolved} of {remediation.detected} detected issue{remediation.detected === 1 ? '' : 's'} marked Fixed, Resolved, or Closed across all scans.
+                  </p>
+                </div>
+
                 <div className="table-box">
-                  <h4>Recent Scans</h4>
-                  {historyLoading ? <Spinner label="Loading recent scans…" /> : history.length === 0 ? (
+                  <div className="table-box-header">
+                    <h4>Scanned URLs History</h4>
+                    <span className="score-note" style={{ margin: 0 }}>{history.length} scan{history.length === 1 ? '' : 's'} total</span>
+                  </div>
+                  {historyLoading ? <Spinner label="Loading scan history…" /> : history.length === 0 ? (
                     <EmptyState title="No scans yet" message="Run your first accessibility scan to get started." icon={ScanLine} />
                   ) : (
                     <table>
-                      <thead><tr><th>Website URL</th><th>Date</th><th>Issues Found</th><th>Status</th><th>Action</th></tr></thead>
+                      <thead><tr><th>Website URL</th><th>Last Scanned</th><th>Compliance Score</th><th>Total Issues</th><th>Actions</th></tr></thead>
                       <tbody>
-                        {history.slice(0, 6).map((h) => (
+                        {history.map((h) => (
                           <tr key={h.id}>
                             <td className="url-cell">{h.url}</td>
                             <td>{new Date(h.scanDate).toLocaleString()}</td>
+                            <td>{scoreOf(h)}%</td>
                             <td>{h.totalIssues}</td>
-                            <td><span className="status-pill completed">Completed</span></td>
-                            <td><button className="link-btn" onClick={() => loadScanFromHistory(h)}>View</button></td>
+                            <td className="row-actions">
+                              <button className="link-btn" onClick={() => loadScanFromHistory(h)}>View Issues</button>
+                              <button className="link-btn" disabled={loading} onClick={() => runScan(h.url)}><RotateCw size={13} /> Re-Scan</button>
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -529,7 +1054,7 @@ function App() {
               </>
             )}
 
-            {/* ===== SCANNER (Add Website) — unchanged, existing behaviour ===== */}
+            {/* ===== SCANNER (Add Website) ===== */}
             {tab === 'scanner' && (
               <>
                 <form className="scan-form" onSubmit={handleScan}>
@@ -568,7 +1093,7 @@ function App() {
                             <div className="issue-header">
                               <span className={`badge badge-${issue.severity}`}>{issue.severity}</span>
                               <span className="issue-type">{issue.type}</span>
-                              <span className="issue-element">&lt;{issue.element}&gt;</span>
+                              <span className="issue-element">&lt;{issue.element || 'unknown'}&gt;</span>
                               {wcag && <span className="wcag-tag">WCAG {wcag.code} · {wcag.name}</span>}
                               <button className="link-btn issue-detail-link" onClick={() => { setSelectedIssueId(issue.id); setTab('issues'); }}>
                                 View details
@@ -592,7 +1117,7 @@ function App() {
               </>
             )}
 
-            {/* ===== WEBSITES (new) ===== */}
+            {/* ===== WEBSITES ===== */}
             {tab === 'websites' && (
               <>
                 <div className="table-box">
@@ -600,9 +1125,13 @@ function App() {
                     className="add-site-row"
                     onSubmit={(e) => {
                       e.preventDefault();
-                      if (!newSiteUrl.trim() || !validateUrl(newSiteUrl.trim())) return;
+                      if (!newSiteUrl.trim() || !validateUrl(newSiteUrl.trim())) {
+                        showToast('Enter a valid URL starting with http:// or https://', 'error');
+                        return;
+                      }
                       setExtraSites((prev) => Array.from(new Set([...prev, newSiteUrl.trim()])));
                       setNewSiteUrl('');
+                      showToast('Website added. Click "Scan now" to scan it.');
                     }}
                   >
                     <input
@@ -630,6 +1159,7 @@ function App() {
                             <td className="row-actions">
                               <button className="link-btn" onClick={() => loadScanFromHistory(h)}>View</button>
                               <button className="link-btn" disabled={loading} onClick={() => runScan(h.url)}><RotateCw size={13} /> Re-scan</button>
+                              <button className="link-btn danger" onClick={() => deleteScan(h.id, h.url)}><X size={13} /> Delete</button>
                             </td>
                           </tr>
                         ))}
@@ -651,7 +1181,7 @@ function App() {
               </>
             )}
 
-            {/* ===== ISSUE DETAIL (new — opened from Issues table or Scanner results) ===== */}
+            {/* ===== ISSUE DETAIL ===== */}
             {tab === 'issues' && selectedIssue && (
               <div className="issue-detail">
                 <button className="link-btn back-link" onClick={() => setSelectedIssueId(null)}><ChevronLeft size={14} /> Back to all issues</button>
@@ -662,7 +1192,7 @@ function App() {
                     <h2>{selectedIssue.type}</h2>
                   </div>
                   <p className="issue-detail-meta">
-                    Element: <code>&lt;{selectedIssue.element}&gt;</code>
+                    Element: <code>&lt;{selectedIssue.element || 'unknown'}&gt;</code>
                     {WCAG_MAP[selectedIssue.type] && <> · WCAG {WCAG_MAP[selectedIssue.type].code} — {WCAG_MAP[selectedIssue.type].name} (Level {WCAG_MAP[selectedIssue.type].level})</>}
                   </p>
 
@@ -671,18 +1201,23 @@ function App() {
 
                   <div className="issue-detail-grid">
                     <div className="field">
-                      <label>Status</label>
-                      <select value={selectedIssue.status} onChange={(e) => updateIssue(selectedIssue.id, { status: e.target.value })}>
+                      <label htmlFor="issue-status">Status</label>
+                      <select id="issue-status" value={selectedIssue.status} onChange={(e) => updateIssue(selectedIssue.id, { status: e.target.value })}>
                         {WORKFLOW_STAGES.concat('Reopened').map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                     </div>
                     <div className="field">
-                      <label>Assign developer</label>
+                      <label htmlFor="issue-assign">Assign developer</label>
                       <select
+                        id="issue-assign"
                         value={MOCK_DEVELOPERS.find(d => d.name === selectedIssue.assignedTo)?.id || ''}
-                        onChange={(e) => {
+                        onChange={async (e) => {
                           const dev = MOCK_DEVELOPERS.find(d => d.id === e.target.value);
-                          updateIssue(selectedIssue.id, { assignedTo: dev ? dev.name : '', status: selectedIssue.status === 'Open' ? 'Assigned' : selectedIssue.status });
+                          const ok = await updateIssue(selectedIssue.id, {
+                            assignedTo: dev ? dev.name : '',
+                            status: selectedIssue.status === 'Open' && dev ? 'Assigned' : selectedIssue.status,
+                          });
+                          if (ok) showToast(dev ? `Assigned to ${dev.name}` : 'Issue unassigned');
                         }}
                       >
                         <option value="">Unassigned</option>
@@ -692,19 +1227,25 @@ function App() {
                   </div>
 
                   <div className="field">
-                    <label>Fix description</label>
+                    <label htmlFor="issue-fix-desc">Fix description</label>
                     <textarea
+                      id="issue-fix-desc"
                       rows={2}
                       placeholder="Describe the fix applied…"
                       defaultValue={selectedIssue.evidenceNote || ''}
-                      onBlur={(e) => updateIssue(selectedIssue.id, { evidenceNote: e.target.value })}
+                      onBlur={async (e) => {
+                        if (e.target.value === (selectedIssue.evidenceNote || '')) return;
+                        const ok = await updateIssue(selectedIssue.id, { evidenceNote: e.target.value });
+                        if (ok) showToast('Fix description saved');
+                      }}
                     />
                   </div>
 
                   <h4>Before / After Evidence</h4>
                   <div className="evidence-grid">
                     {['before', 'after'].map((side) => {
-                      const img = evidenceByIssue[selectedIssue.id]?.[side];
+                      const evidence = evidenceByIssue[selectedIssue.id]?.[side];
+                      const img = evidence?.url;
                       return (
                         <div className="evidence-slot" key={side}>
                           <span className="evidence-slot-label">{side === 'before' ? 'Before fix' : 'After fix'}</span>
@@ -715,7 +1256,7 @@ function App() {
                                 type="button"
                                 className="evidence-remove"
                                 aria-label={`Remove ${side} screenshot`}
-                                onClick={() => setEvidenceByIssue((prev) => ({ ...prev, [selectedIssue.id]: { ...prev[selectedIssue.id], [side]: null } }))}
+                                onClick={() => removeEvidence(selectedIssue.id, side)}
                               >
                                 <X size={13} />
                               </button>
@@ -724,14 +1265,35 @@ function App() {
                             <label className="evidence-upload">
                               <Upload size={16} />
                               <span>Upload screenshot</span>
-                              <input type="file" accept="image/*" hidden onChange={(e) => handleEvidenceUpload(selectedIssue.id, side, e.target.files?.[0])} />
+                              <input
+                                type="file"
+                                accept="image/*"
+                                hidden
+                                onChange={(e) => {
+                                  handleEvidenceUpload(selectedIssue.id, side, e.target.files?.[0]);
+                                  e.target.value = '';
+                                }}
+                              />
                             </label>
                           )}
                         </div>
                       );
                     })}
                   </div>
-                  <p className="evidence-hint">Screenshots are kept in this browser session for review — not yet saved to the server.</p>
+
+                  {evidenceByIssue[selectedIssue.id]?.before &&
+                    evidenceByIssue[selectedIssue.id]?.after &&
+                    !['Fixed', 'Retest', 'Closed'].includes(selectedIssue.status) && (
+                      <div className="banner-success">
+                        <CheckCircle2 size={18} />
+                        <p>Both before and after evidence are uploaded. Ready to mark this issue as Fixed.</p>
+                        <button type="button" className="btn-primary" onClick={() => markAsFixed(selectedIssue.id)}>
+                          Mark as Fixed
+                        </button>
+                      </div>
+                    )}
+
+                  <p className="evidence-hint">Evidence is stored by the Spring Boot backend and remains available when this issue is opened again.</p>
 
                   <button className="link-btn" onClick={() => rescanIssue(selectedIssue.id)}><RotateCw size={13} /> Re-scan this element</button>
                 </div>
@@ -829,7 +1391,7 @@ function App() {
               </div>
             )}
 
-            {/* ===== DEVELOPERS (new) ===== */}
+            {/* ===== DEVELOPERS ===== */}
             {tab === 'developers' && (
               <div className="developer-grid">
                 {MOCK_DEVELOPERS.map((dev) => {
@@ -867,7 +1429,7 @@ function App() {
                   <EmptyState title="No reports yet" message="Reports are generated automatically after a scan finishes." icon={FileText} />
                 ) : (
                   <table>
-                    <thead><tr><th>Website</th><th>Scan Date</th><th>Total Issues</th><th>Severity Summary</th><th>Compliance Score*</th></tr></thead>
+                    <thead><tr><th>Website</th><th>Scan Date</th><th>Total Issues</th><th>Severity Summary</th><th>Compliance Score*</th><th>Actions</th></tr></thead>
                     <tbody>
                       {history.map((h) => (
                         <tr key={h.id}>
@@ -881,6 +1443,7 @@ function App() {
                             <span className="c-minor">{h.minorCount}Mn</span>
                           </td>
                           <td>{scoreOf(h)}%</td>
+                          <td><button className="link-btn danger" onClick={() => deleteScan(h.id, h.url)}><X size={13} /> Delete</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -902,10 +1465,14 @@ function App() {
                       {auditLogs.map((log, i) => (
                         <tr key={log.id || i}>
                           <td>{new Date(log.timestamp || log.createdAt).toLocaleString()}</td>
-                          <td>{log.user || log.performedBy || user.name || user.email}</td>
-                          <td>{log.action || log.event}</td>
-                          <td>{log.issueId ? `Issue #${log.issueId}` : log.scanId ? `Scan #${log.scanId}` : '—'}</td>
-                          <td>{log.details || log.description || '—'}</td>
+                          <td>{log.actor || log.user || user.name || user.email}</td>
+                          <td><span className="badge badge-minor">{formatAuditAction(log.action || log.event)}</span></td>
+                          <td>
+                            {log.entityType && log.entityId
+                              ? `${log.entityType === 'issue' ? 'Issue' : 'Scan'} #${log.entityId}`
+                              : '—'}
+                          </td>
+                          <td>{formatAuditDetails(log.details || log.description)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -914,66 +1481,209 @@ function App() {
               </div>
             )}
 
-            {/* ===== SYSTEM HEALTH (new) ===== */}
+            {/* ===== SYSTEM HEALTH ===== */}
             {tab === 'health' && (
               <>
                 <div className="stat-row">
                   <div className="health-card">
                     <span className="health-dot online" />
-                    <div><h4>Backend API</h4><p>Online · avg response 118ms</p></div>
+                    <div>
+                      <h4>Backend API</h4>
+                      <p>Online · avg response 118ms</p>
+                    </div>
                   </div>
+
                   <div className="health-card">
                     <span className={`health-dot ${loading ? 'busy' : 'online'}`} />
-                    <div><h4>Scanner Service</h4><p>{loading ? 'Scan in progress…' : 'Idle · ready to scan'}</p></div>
+                    <div>
+                      <h4>Scanner Service</h4>
+                      <p>{loading ? 'Scan in progress…' : 'Idle · ready to scan'}</p>
+                    </div>
                   </div>
+
                   <div className="health-card">
                     <span className="health-dot online" />
-                    <div><h4>Database</h4><p>Connected · {history.length} scan record(s)</p></div>
+                    <div>
+                      <h4>Database</h4>
+                      <p>Connected · {history.length} scan record(s)</p>
+                    </div>
                   </div>
                 </div>
 
                 <div className="table-box">
                   <h4>Recent Activity Metrics</h4>
+
                   <table>
-                    <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+                    <thead>
+                      <tr>
+                        <th>Metric</th>
+                        <th>Value</th>
+                      </tr>
+                    </thead>
+
                     <tbody>
-                      <tr><td>Total scans run</td><td>{totalScans}</td></tr>
-                      <tr><td>Last scan</td><td>{history[0] ? new Date(history[0].scanDate).toLocaleString() : '—'}</td></tr>
-                      <tr><td>Average issues per scan</td><td>{totalScans ? Math.round(totalIssuesFound / totalScans) : 0}</td></tr>
-                      <tr><td>Open issues (current scan)</td><td>{issues.filter(i => i.status !== 'Closed').length}</td></tr>
+                      <tr>
+                        <td>Total scans run</td>
+                        <td>{totalScans}</td>
+                      </tr>
+
+                      <tr>
+                        <td>Last scan</td>
+                        <td>{history[0] ? new Date(history[0].scanDate).toLocaleString() : '—'}</td>
+                      </tr>
+
+                      <tr>
+                        <td>Average issues per scan</td>
+                        <td>{totalScans ? Math.round(totalIssuesFound / totalScans) : 0}</td>
+                      </tr>
+
+                      <tr>
+                        <td>Open issues (current scan)</td>
+                        <td>{issues.filter((i) => i.status !== 'Closed').length}</td>
+                      </tr>
                     </tbody>
                   </table>
-                  <p className="score-note">Metrics shown for the current session. Connect a monitoring backend for persistent uptime tracking.</p>
+
+                  <p className="score-note">
+                    Metrics shown for the current session. Connect a monitoring backend for persistent uptime tracking.
+                  </p>
                 </div>
               </>
             )}
 
             {/* ===== SETTINGS ===== */}
             {tab === 'settings' && (
-              <div className="table-box">
-                <h4>Account</h4>
-                <p className="muted">Signed in as <strong>{user.email}</strong> ({user.role})</p>
+              <div className="settings-grid">
 
-                <h4>Data</h4>
-                <p className="muted">{history.length} scan(s) stored.</p>
-                <button
-                  className="link-btn danger"
-                  onClick={async () => {
-                    if (!window.confirm('Delete ALL scan history? This cannot be undone.')) return;
-                    for (const h of history) {
-                      await axios.delete(`${API_BASE}/${h.id}`);
-                    }
-                    setCurrentScan(null);
-                    setIssues([]);
-                    fetchHistory();
-                  }}
-                >
-                  Clear all scan history
-                </button>
+                {/* PROFILE */}
+                <div className="table-box settings-section">
+                  <h4>Profile</h4>
+
+                  <div className="settings-profile-row">
+                    <div
+                      className="developer-avatar"
+                      style={{ width: 52, height: 52, fontSize: 17 }}
+                    >
+                      {(user.name || user.email)
+                        .split(' ')
+                        .map((n) => n[0])
+                        .join('')
+                        .slice(0, 2)
+                        .toUpperCase()}
+                    </div>
+
+                    <div>
+                      <p className="settings-profile-name">{user.name || user.email}</p>
+                      <p className="settings-profile-email">{user.email}</p>
+                    </div>
+                  </div>
+
+                  <div className="settings-field-row">
+                    <span className="settings-field-label">Role</span>
+                    <span className="status-pill status-assigned">{user.role || 'Auditor'}</span>
+                  </div>
+
+                  <div className="settings-field-row">
+                    <span className="settings-field-label">Account type</span>
+                    <span className="muted" style={{ marginBottom: 0 }}>Standard</span>
+                  </div>
+                </div>
+
+                {/* NOTIFICATION PREFERENCES */}
+                <div className="table-box settings-section">
+                  <h4>Notification Preferences</h4>
+
+                  <p className="score-note" style={{ marginTop: -6 }}>
+                    Local display preferences — not yet backed by a notification service.
+                  </p>
+
+                  {[
+                    { key: 'scanComplete', label: 'Scan completed', desc: 'Notify when a website scan finishes' },
+                    { key: 'issueAssigned', label: 'Issue assigned to me', desc: 'Notify when an issue is assigned' },
+                    { key: 'issueResolved', label: 'Issue resolved', desc: 'Notify when a fix is verified' },
+                  ].map((pref) => (
+                    <div className="settings-toggle-row" key={pref.key}>
+                      <div>
+                        <p className="settings-toggle-label">{pref.label}</p>
+                        <p className="settings-toggle-desc">{pref.desc}</p>
+                      </div>
+
+                      <label className="settings-switch">
+                        <input
+                          type="checkbox"
+                          checked={!!notificationPrefs[pref.key]}
+                          onChange={() =>
+                            setNotificationPrefs((prev) => ({ ...prev, [pref.key]: !prev[pref.key] }))
+                          }
+                          aria-label={pref.label}
+                        />
+                        <span className="settings-switch-track">
+                          <span className="settings-switch-thumb" />
+                        </span>
+                      </label>
+                    </div>
+                  ))}
+                </div>
+
+                {/* DATA */}
+                <div className="table-box settings-section">
+                  <h4>Data</h4>
+
+                  <div className="settings-field-row">
+                    <span className="settings-field-label">Scans stored</span>
+                    <span className="muted" style={{ marginBottom: 0 }}>{history.length}</span>
+                  </div>
+
+                  <div className="settings-field-row">
+                    <span className="settings-field-label">Issues tracked</span>
+                    <span className="muted" style={{ marginBottom: 0 }}>{issues.length}</span>
+                  </div>
+                </div>
+
+                {/* DANGER ZONE */}
+                <div className="table-box settings-section settings-danger">
+                  <h4>Danger Zone</h4>
+
+                  <p className="muted">
+                    Permanently delete all scan history, issues, and evidence. This cannot be undone.
+                  </p>
+
+                  <button
+                    className="link-btn danger"
+                    onClick={async () => {
+                      if (!window.confirm('Delete ALL scan history? This cannot be undone.')) {
+                        return;
+                      }
+
+                      try {
+                        for (const h of history) {
+                          await axios.delete(`${API_BASE}/${h.id}`);
+                        }
+
+                        setCurrentScan(null);
+                        setIssues([]);
+                        await fetchHistory();
+                        showToast('All scan history cleared');
+                      } catch (err) {
+                        console.error(err);
+                        showToast(err.response?.data?.error || 'Failed to clear scan history.', 'error');
+                      }
+                    }}
+                  >
+                    Clear all scan history
+                  </button>
+                </div>
+
               </div>
             )}
+
           </div>
         </main>
+      </div>
+
+      {/* Toast region: always in the DOM so screen readers announce new messages */}
+      <div className="toast-region" role="status" aria-live="polite">
+        {toast && <div className={`toast toast-${toast.type}`}>{toast.msg}</div>}
       </div>
     </div>
   );
