@@ -10,8 +10,8 @@ import {
 } from 'lucide-react';
 import './App.css';
 
-const API_BASE = 'http://localhost:8080/api/scans';
-const AUTH_BASE = 'http://localhost:8080/api/auth';
+const API_BASE = 'https://continuous-accessibility-scanner.onrender.com/api/scans';
+const AUTH_BASE = 'https://continuous-accessibility-scanner.onrender.com/api/auth';
 
 axios.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
