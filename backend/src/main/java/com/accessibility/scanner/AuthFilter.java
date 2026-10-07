@@ -17,8 +17,11 @@ public class AuthFilter extends OncePerRequestFilter {
     private JwtUtil jwtUtil;
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
-            throws ServletException, IOException {
+    protected void doFilterInternal(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            FilterChain chain
+    ) throws ServletException, IOException {
 
         String path = request.getRequestURI();
         String method = request.getMethod();
@@ -35,30 +38,71 @@ public class AuthFilter extends OncePerRequestFilter {
 
         String header = request.getHeader("Authorization");
 
-        // TEMP DEBUG LOGGING — remove once the 401 issue is found
-        System.out.println("[AuthFilter] " + method + " " + path
-                + " | Authorization header present: " + (header != null)
-                + " | value starts with: " + (header != null && header.length() > 20 ? header.substring(0, 20) + "..." : header));
+        System.out.println(
+                "[AuthFilter] " + method + " " + path
+                        + " | Authorization header present: " + (header != null)
+        );
 
         if (header == null || !header.startsWith("Bearer ")) {
-            System.out.println("[AuthFilter] REJECTED — missing or malformed Authorization header for " + method + " " + path);
+
+            System.out.println(
+                    "[AuthFilter] REJECTED — missing or malformed Authorization header"
+            );
+
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
-            response.getWriter().write("{\"error\":\"Missing or invalid Authorization header\"}");
+
+            response.getWriter().write(
+                    "{\"error\":\"Missing or invalid Authorization header\"}"
+            );
+
             return;
         }
 
+        /*
+         * IMPORTANT:
+         * Only JWT validation is inside this try-catch.
+         * Scanner/controller errors must NOT be converted into 401.
+         */
+
         try {
+
             jwtUtil.validateAndGetClaims(header.substring(7));
-            System.out.println("[AuthFilter] Token OK for " + method + " " + path);
-            chain.doFilter(request, response);
+
+            System.out.println(
+                    "[AuthFilter] Token OK for "
+                            + method + " " + path
+            );
+
         } catch (Exception e) {
-            // TEMP DEBUG LOGGING — this line tells us the EXACT reason (expired, bad signature, malformed, etc.)
-            System.out.println("[AuthFilter] REJECTED — token validation failed for " + method + " " + path
-                    + " | Exception: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+
+            System.out.println(
+                    "[AuthFilter] REJECTED — token validation failed for "
+                            + method + " " + path
+                            + " | Exception: "
+                            + e.getClass().getSimpleName()
+                            + " - "
+                            + e.getMessage()
+            );
+
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.setContentType("application/json");
-            response.getWriter().write("{\"error\":\"Invalid or expired token\"}");
+
+            response.getWriter().write(
+                    "{\"error\":\"Invalid or expired token\"}"
+            );
+
+            return;
         }
+
+        /*
+         * JWT is valid.
+         * Continue normally to Controller/Service.
+         *
+         * Any scanner error will now remain a scanner/server error
+         * instead of being incorrectly reported as a JWT error.
+         */
+
+        chain.doFilter(request, response);
     }
 }

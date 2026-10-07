@@ -1,13 +1,18 @@
 package com.accessibility.scanner;
 
+import io.github.bonigarcia.wdm.WebDriverManager;
 import org.jsoup.Connection;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,29 +33,308 @@ public class ScanService {
                     + "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
     /**
-     * Fetches the page HTML.
-     * No browser required — HTTP GET + HTML parsing using Jsoup.
+     * Fetches website HTML.
+     *
+     * First attempt:
+     * Jsoup - fast HTTP based scanning.
+     *
+     * Fallback:
+     * Selenium - opens the website in a real Chrome browser
+     * when the website blocks Jsoup with HTTP 403 or when the
+     * page appears to be JavaScript-rendered.
      */
-    private Document fetchDocument(String url) throws Exception {
+    private Document fetchDocument(String url) {
 
-        Connection.Response response = Jsoup.connect(url)
-                .userAgent(USER_AGENT)
-                .header("Accept-Language", "en-US,en;q=0.9")
-                .timeout(15000)
-                .maxBodySize(5 * 1024 * 1024)
-                .followRedirects(true)
-                .ignoreHttpErrors(true)
-                .execute();
+        try {
 
-        if (response.statusCode() >= 400) {
+            Connection.Response response = Jsoup.connect(url)
+                    .userAgent(USER_AGENT)
+                    .header(
+                            "Accept",
+                            "text/html,application/xhtml+xml,application/xml;q=0.9,"
+                                    + "image/avif,image/webp,*/*;q=0.8"
+                    )
+                    .header(
+                            "Accept-Language",
+                            "en-US,en;q=0.9"
+                    )
+                    .header(
+                            "Cache-Control",
+                            "no-cache"
+                    )
+                    .header(
+                            "Pragma",
+                            "no-cache"
+                    )
+                    .timeout(20000)
+                    .maxBodySize(5 * 1024 * 1024)
+                    .followRedirects(true)
+                    .ignoreHttpErrors(true)
+                    .execute();
+
+            int statusCode = response.statusCode();
+
+            /*
+             * =========================================================
+             * HTTP 403
+             * =========================================================
+             *
+             * Website denied the normal Jsoup request.
+             * Try Selenium because Selenium uses a real browser.
+             */
+            if (statusCode == 403) {
+
+                System.out.println(
+                        "[ScanService] Jsoup received HTTP 403. "
+                                + "Trying Selenium fallback..."
+                );
+
+                return fetchWithSelenium(url);
+            }
+
+            /*
+             * =========================================================
+             * HTTP 429
+             * =========================================================
+             *
+             * Website is rate limiting the request.
+             * Selenium may or may not be accepted, so try it once.
+             */
+            if (statusCode == 429) {
+
+                System.out.println(
+                        "[ScanService] Jsoup received HTTP 429. "
+                                + "Trying Selenium fallback..."
+                );
+
+                return fetchWithSelenium(url);
+            }
+
+            /*
+             * =========================================================
+             * Other HTTP errors
+             * =========================================================
+             */
+            if (statusCode >= 400) {
+
+                throw new ScanFailedException(
+                        "Website responded with HTTP "
+                                + statusCode
+                                + " — the page may not exist or access may be restricted.",
+                        null
+                );
+            }
+
+            Document document = response.parse();
+
+            /*
+             * =========================================================
+             * JavaScript-rendered page detection
+             * =========================================================
+             *
+             * Some React/Vue/Angular websites return a very small
+             * HTML shell through Jsoup and generate the actual page
+             * using JavaScript.
+             *
+             * In that situation Selenium loads the rendered page.
+             */
+            String bodyText = "";
+
+            if (document.body() != null) {
+                bodyText = document.body().text().trim();
+            }
+
+            boolean hasScripts =
+                    !document.select("script").isEmpty();
+
+            boolean hasMeaningfulContent =
+                    !document.select(
+                            "img, input, a, form, h1, h2, h3, main, article, nav"
+                    ).isEmpty();
+
+            if (bodyText.isEmpty()
+                    && hasScripts
+                    && !hasMeaningfulContent) {
+
+                System.out.println(
+                        "[ScanService] Page appears JavaScript-rendered. "
+                                + "Trying Selenium fallback..."
+                );
+
+                try {
+                    return fetchWithSelenium(url);
+                } catch (Exception seleniumException) {
+
+                    /*
+                     * If Selenium also fails, keep the Jsoup document
+                     * rather than hiding the original successful response.
+                     */
+                    System.out.println(
+                            "[ScanService] Selenium fallback failed. "
+                                    + "Using Jsoup document."
+                    );
+                }
+            }
+
+            return document;
+
+        } catch (ScanFailedException e) {
+
+            throw e;
+
+        } catch (Exception e) {
+
             throw new ScanFailedException(
-                    "Website responded with HTTP " + response.statusCode()
-                            + " — it may be blocking automated requests or the page does not exist.",
-                    null
+                    "Scan failed for "
+                            + url
+                            + ": "
+                            + e.getClass().getSimpleName()
+                            + (
+                            e.getMessage() != null
+                                    ? " - " + e.getMessage()
+                                    : ""
+                    ),
+                    e
             );
         }
+    }
 
-        return response.parse();
+    /**
+     * Selenium fallback.
+     *
+     * Opens the target URL in headless Chrome, waits for the page
+     * to load, obtains the rendered HTML and converts it into a
+     * Jsoup Document so that the existing accessibility rules can
+     * continue working without changing them.
+     */
+    private Document fetchWithSelenium(String url) {
+
+        WebDriver driver = null;
+
+        try {
+
+            System.out.println(
+                    "[ScanService] Starting Selenium for: " + url
+            );
+
+            /*
+             * WebDriverManager automatically prepares the ChromeDriver.
+             */
+            WebDriverManager.chromedriver().setup();
+
+            ChromeOptions options = new ChromeOptions();
+
+            /*
+             * Headless mode means Chrome runs without opening a
+             * visible browser window.
+             */
+            options.addArguments("--headless=new");
+
+            /*
+             * Useful for deployment/container environments.
+             */
+            options.addArguments("--no-sandbox");
+            options.addArguments("--disable-dev-shm-usage");
+            options.addArguments("--disable-gpu");
+
+            /*
+             * Browser size helps responsive websites render
+             * their desktop layout consistently.
+             */
+            options.addArguments("--window-size=1920,1080");
+
+            /*
+             * Use the same browser-like user agent.
+             */
+            options.addArguments("--user-agent=" + USER_AGENT);
+
+            driver = new ChromeDriver(options);
+
+            driver.manage()
+                    .timeouts()
+                    .pageLoadTimeout(Duration.ofSeconds(30));
+
+            /*
+             * Open website.
+             */
+            driver.get(url);
+
+            /*
+             * Small wait to allow JavaScript-rendered content
+             * to appear after the initial page load.
+             */
+            Thread.sleep(1500);
+
+            /*
+             * Get the final rendered HTML.
+             */
+            String renderedHtml = driver.getPageSource();
+
+            /*
+             * Use the final browser URL as the base URL.
+             */
+            String finalUrl = driver.getCurrentUrl();
+
+            System.out.println(
+                    "[ScanService] Selenium page loaded successfully: "
+                            + finalUrl
+            );
+
+            if (renderedHtml == null || renderedHtml.trim().isEmpty()) {
+
+                throw new ScanFailedException(
+                        "Selenium loaded the website but returned empty HTML.",
+                        null
+                );
+            }
+
+            /*
+             * Convert rendered browser HTML into Jsoup Document.
+             *
+             * Existing accessibility checks continue to work
+             * exactly as before.
+             */
+            return Jsoup.parse(
+                    renderedHtml,
+                    finalUrl
+            );
+
+        } catch (ScanFailedException e) {
+
+            throw e;
+
+        } catch (Exception e) {
+
+            throw new ScanFailedException(
+                    "Selenium could not load "
+                            + url
+                            + ": "
+                            + e.getClass().getSimpleName()
+                            + (
+                            e.getMessage() != null
+                                    ? " - " + e.getMessage()
+                                    : ""
+                    ),
+                    e
+            );
+
+        } finally {
+
+            /*
+             * Always close Chrome.
+             *
+             * This prevents Chrome processes from remaining
+             * in the background after a scan.
+             */
+            if (driver != null) {
+
+                try {
+                    driver.quit();
+                } catch (Exception ignored) {
+                    // Ignore cleanup error.
+                }
+            }
+        }
     }
 
     /**
@@ -59,24 +343,31 @@ public class ScanService {
     public ScanResult performScan(String url) {
 
         ScanResult result = new ScanResult(url);
+
         List<Issue> detectedIssues = new ArrayList<>();
 
         Document doc;
 
         try {
+
             doc = fetchDocument(url);
 
         } catch (ScanFailedException sfe) {
+
             throw sfe;
 
         } catch (Exception e) {
 
             throw new ScanFailedException(
-                    "Scan failed for " + url + ": "
+                    "Scan failed for "
+                            + url
+                            + ": "
                             + e.getClass().getSimpleName()
-                            + (e.getMessage() != null
-                            ? " - " + e.getMessage()
-                            : ""),
+                            + (
+                            e.getMessage() != null
+                                    ? " - " + e.getMessage()
+                                    : ""
+                    ),
                     e
             );
         }
@@ -123,7 +414,9 @@ public class ScanService {
 
             boolean hasLabel = false;
 
-            // Normal <label for="...">
+            /*
+             * Normal <label for="...">
+             */
             if (id != null && !id.isEmpty()) {
 
                 hasLabel = !doc
@@ -131,15 +424,19 @@ public class ScanService {
                         .isEmpty();
             }
 
-            // aria-label
+            /*
+             * aria-label
+             */
             boolean hasAriaLabel =
-                    ariaLabel != null &&
-                            !ariaLabel.trim().isEmpty();
+                    ariaLabel != null
+                            && !ariaLabel.trim().isEmpty();
 
-            // aria-labelledby
+            /*
+             * aria-labelledby
+             */
             boolean hasAriaLabelledBy =
-                    ariaLabelledBy != null &&
-                            !ariaLabelledBy.trim().isEmpty();
+                    ariaLabelledBy != null
+                            && !ariaLabelledBy.trim().isEmpty();
 
             if (!hasLabel
                     && !hasAriaLabel
@@ -181,6 +478,7 @@ public class ScanService {
         /*
          * =========================================================
          * 4. MISSING PAGE TITLE
+         * WCAG 2.4.2
          * =========================================================
          */
 
@@ -253,7 +551,8 @@ public class ScanService {
                 "{\"note\":\"see issues table for details\"}"
         );
 
-        ScanResult savedResult = repository.save(result);
+        ScanResult savedResult =
+                repository.save(result);
 
         /*
          * =========================================================
@@ -326,10 +625,13 @@ public class ScanService {
             for (String id : labelledBy.split("\\s+")) {
 
                 Element labelElement =
-                        link.ownerDocument().getElementById(id);
+                        link.ownerDocument()
+                                .getElementById(id);
 
                 if (labelElement != null
-                        && !labelElement.text().trim().isEmpty()) {
+                        && !labelElement.text()
+                        .trim()
+                        .isEmpty()) {
 
                     return true;
                 }
@@ -345,14 +647,6 @@ public class ScanService {
 
         /*
          * 5. Image alt text inside the link
-         *
-         * Example:
-         *
-         * <a href="/home">
-         *     <img src="home.png" alt="Home">
-         * </a>
-         *
-         * This is NOT an empty link.
          */
         for (Element img : link.select("img")) {
 
@@ -428,6 +722,9 @@ public class ScanService {
 
     /**
      * Re-scan a previously detected issue.
+     *
+     * Selenium fallback is automatically used here as well,
+     * because rescan also calls fetchDocument().
      */
     public Issue rescanIssue(Long issueId) {
 
@@ -562,11 +859,15 @@ public class ScanService {
         } catch (Exception e) {
 
             throw new ScanFailedException(
-                    "Re-scan failed for " + url + ": "
+                    "Re-scan failed for "
+                            + url
+                            + ": "
                             + e.getClass().getSimpleName()
-                            + (e.getMessage() != null
-                            ? " - " + e.getMessage()
-                            : ""),
+                            + (
+                            e.getMessage() != null
+                                    ? " - " + e.getMessage()
+                                    : ""
+                    ),
                     e
             );
         }
